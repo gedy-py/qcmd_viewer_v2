@@ -17,7 +17,7 @@ Client-side QCM-D data analysis tool. Runs entirely in the browser — no server
 ### GitHub Pages
 1. Push this folder to a GitHub repository
 2. Go to Settings → Pages → Source: main branch
-3. Your app is live at `https://username.github.io/repo-name/`
+3. Your app is live at `https://gedy-py.github.io/qcmd_viewer_v2/`
 
 ### Local use
 Simply open `index.html` in any modern browser. Works offline (after initial CDN load).
