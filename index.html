@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QCM-D Viewer</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+:root {
+  --pri: #2253A2; --sec: #A71B11; --bg: #f5f6f8; --card: #fff;
+  --border: #ddd; --text: #333; --muted: #888; --sidebar: 250px;
+  --radius: 6px; --shadow: 0 1px 4px rgba(0,0,0,.08);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+h1 { font-size: 1.6em; color: var(--pri); }
+h2 { font-size: 1.2em; margin-bottom: .5em; }
+h3 { font-size: 1em; margin-bottom: .4em; }
+button { cursor: pointer; border: 1px solid var(--border); background: var(--card); padding: 6px 14px; border-radius: var(--radius); font-size: 13px; transition: .15s; }
+button:hover { background: #f0f0f0; }
+button.primary { background: var(--pri); color: #fff; border-color: var(--pri); }
+button.primary:hover { background: #1a4080; }
+button.danger { color: var(--sec); border-color: var(--sec); }
+button.small { padding: 3px 8px; font-size: 12px; }
+input[type=text], select { border: 1px solid var(--border); padding: 5px 8px; border-radius: 4px; font-size: 13px; width: 100%; }
+input[type=range] { width: 100%; }
+label { font-size: 13px; display: block; margin-bottom: 2px; color: var(--text); }
+.checkbox-group { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.checkbox-group label { display: flex; align-items: center; gap: 4px; font-weight: normal; }
+
+/* Upload screen */
+#screen-upload { max-width: 800px; margin: 60px auto; padding: 0 20px; }
+.upload-zone { border: 2px dashed var(--border); border-radius: var(--radius); padding: 50px 20px; text-align: center; cursor: pointer; transition: .2s; background: var(--card); margin-top: 20px; }
+.upload-zone:hover, .upload-zone.dragover { border-color: var(--pri); background: #f0f4fb; }
+.upload-zone p { margin: 8px 0; color: var(--muted); }
+#file-input { display: none; }
+#validation-panel { margin-top: 30px; display: none; }
+.meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: 10px; margin: 15px 0; }
+.meta-item { background: var(--card); padding: 10px 14px; border-radius: var(--radius); box-shadow: var(--shadow); }
+.meta-item .label { font-size: 11px; color: var(--muted); text-transform: uppercase; }
+.meta-item .value { font-size: 16px; font-weight: 600; margin-top: 2px; }
+.validation-actions { display: flex; gap: 12px; justify-content: center; margin-top: 20px; }
+
+/* Analysis screen */
+#screen-analysis { display: none; height: 100vh; display: none; flex-direction: column; }
+.analysis-header { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--card); border-bottom: 1px solid var(--border); }
+.analysis-header .filename { font-weight: 600; color: var(--pri); }
+.tab-bar { display: flex; gap: 0; background: var(--card); border-bottom: 2px solid var(--border); padding: 0 16px; }
+.tab-bar button { border: none; background: none; padding: 10px 20px; font-size: 14px; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -2px; border-radius: 0; }
+.tab-bar button.active { color: var(--pri); border-bottom-color: var(--pri); font-weight: 600; }
+.tab-content { display: none; flex: 1; overflow: hidden; }
+.tab-content.active { display: flex; }
+
+/* View layout: sidebar + main */
+.view-layout { display: flex; flex: 1; overflow: hidden; height: 100%; }
+.controls-sidebar { width: var(--sidebar); min-width: var(--sidebar); background: var(--card); border-right: 1px solid var(--border); padding: 12px; overflow-y: auto; }
+.controls-sidebar .control-group { margin-bottom: 14px; }
+.controls-sidebar .control-group > label:first-child { font-weight: 600; margin-bottom: 6px; color: var(--pri); font-size: 12px; text-transform: uppercase; }
+.main-content { flex: 1; overflow-y: auto; padding: 12px 16px; }
+
+/* Marker toolbar */
+.marker-toolbar { display: flex; align-items: center; gap: 10px; margin: 8px 0; padding: 8px 12px; background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); }
+.marker-toolbar .hint { font-size: 12px; color: var(--pri); font-style: italic; }
+.placement-active .marker-toolbar { background: #e8f0fe; border: 1px solid var(--pri); }
+
+/* Step table */
+.step-table-wrap { overflow-x: auto; margin: 12px 0; }
+.step-table { border-collapse: collapse; width: 100%; font-size: 13px; background: var(--card); }
+.step-table th, .step-table td { border: 1px solid var(--border); padding: 5px 8px; text-align: center; white-space: nowrap; }
+.step-table th { background: #f8f9fa; font-weight: 600; }
+.step-table th.row-label { text-align: right; background: #f0f2f5; min-width: 100px; }
+.step-table .marker-hdr { background: var(--pri); color: #fff; width: 30px; font-weight: 700; font-size: 14px; }
+.step-table .step-name-input { border: none; background: transparent; text-align: center; width: 100%; font-size: 13px; padding: 2px; }
+.step-table .step-name-input:focus { outline: 1px solid var(--pri); background: #fff; }
+.step-table tr.delta-row td { font-weight: 600; }
+
+/* Custom delta rows */
+.custom-delta-section { margin: 8px 0; }
+.custom-delta-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--card); border: 1px dashed var(--pri); border-radius: var(--radius); margin-bottom: 6px; font-size: 13px; }
+.custom-delta-item .range-label { font-weight: 700; color: var(--pri); white-space: nowrap; }
+.custom-delta-item .delta-values { display: flex; flex-wrap: wrap; gap: 6px 16px; flex: 1; }
+.custom-delta-item .delta-val { white-space: nowrap; }
+
+/* Editor */
+details.editor-section { margin: 12px 0; background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); }
+details.editor-section summary { padding: 10px 14px; cursor: pointer; font-weight: 600; font-size: 13px; }
+.editor-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; padding: 12px 14px; }
+.editor-grid .full { grid-column: 1/-1; }
+.editor-grid label { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.editor-actions { grid-column: 1/-1; display: flex; gap: 8px; margin-top: 4px; }
+
+/* Export */
+.export-section { display: flex; align-items: center; gap: 10px; margin: 12px 0; padding: 10px 14px; background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); }
+.export-section select { width: auto; }
+
+/* Time inputs row */
+.time-row { display: flex; gap: 6px; align-items: center; }
+.time-row input { flex: 1; }
+.time-row span { color: var(--muted); }
+
+/* Smooth params */
+.smooth-params { margin-top: 6px; padding-left: 4px; }
+.smooth-params label { display: flex; align-items: center; gap: 6px; font-weight: normal; }
+.smooth-params .val { font-weight: 600; min-width: 24px; text-align: right; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════ UPLOAD SCREEN ═══════════ -->
+<div id="screen-upload">
+  <h1>📊 QCM-D Viewer</h1>
+  <p style="color:var(--muted); margin-top:4px; font-size:13px;">
+    Client-side QCM-D data analysis tool.
+    <a href="https://github.com/gedy-py/qcmd_viewer" target="_blank" style="color:var(--pri);">GitHub</a>
+  </p>
+  <div class="upload-zone" id="upload-zone">
+    <p style="font-size:2em;">📂</p>
+    <p><strong>Drop a CSV or XLSX file here</strong></p>
+    <p>or <span style="color:var(--pri); text-decoration:underline;">browse files</span></p>
+    <input type="file" id="file-input" accept=".csv,.xlsx,.xls">
+  </div>
+
+  <div id="validation-panel">
+    <h2>File validation</h2>
+    <div class="meta-grid" id="meta-grid"></div>
+    <div id="quicklook-chart" style="width:100%; height:380px;"></div>
+    <div class="validation-actions">
+      <button id="btn-back" onclick="resetUpload()">← Change file</button>
+      <button id="btn-validate" class="primary" onclick="validateAndOpen()">Validate and open →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ ANALYSIS SCREEN ═══════════ -->
+<div id="screen-analysis">
+  <div class="analysis-header">
+    <span class="filename" id="analysis-filename"></span>
+    <button class="small" onclick="backToUpload()">Change file</button>
+  </div>
+
+  <div class="tab-bar">
+    <button class="tab active" data-tab="ts" onclick="switchTab('ts')">📈 Time Series</button>
+    <button class="tab" data-tab="ddf" onclick="switchTab('ddf')">🔄 ΔD vs Δf</button>
+  </div>
+
+  <!-- ──── TIME SERIES TAB ──── -->
+  <div id="tab-ts" class="tab-content active">
+    <div class="view-layout">
+      <div class="controls-sidebar" id="ts-sidebar">
+        <div class="control-group">
+          <label>Data type</label>
+          <select id="ts-data-type" onchange="onTSChange()">
+            <option value="both">Frequency & Dissipation</option>
+            <option value="freq">Frequency only</option>
+            <option value="diss">Dissipation only</option>
+          </select>
+        </div>
+        <div class="control-group" id="ts-freq-group">
+          <label>Δf harmonics</label>
+          <div class="checkbox-group" id="ts-freq-checks"></div>
+        </div>
+        <div class="control-group" id="ts-diss-group">
+          <label>ΔD harmonics</label>
+          <div class="checkbox-group" id="ts-diss-checks"></div>
+        </div>
+        <div class="control-group">
+          <label>Time window</label>
+          <div class="time-row">
+            <input type="text" id="ts-tmin" placeholder="hh:mm" onchange="onTSTimeInput()">
+            <span>—</span>
+            <input type="text" id="ts-tmax" placeholder="hh:mm" onchange="onTSTimeInput()">
+          </div>
+        </div>
+        <div class="control-group">
+          <label><input type="checkbox" id="ts-smooth-chk" onchange="onTSChange()"> Smoothing</label>
+          <div class="smooth-params">
+            <label>Window <input type="range" id="ts-smooth-win" min="3" max="101" step="2" value="21" oninput="this.nextElementSibling.textContent=this.value; onTSChange()"><span class="val">21</span></label>
+            <label>Order <input type="range" id="ts-smooth-poly" min="1" max="5" value="1" oninput="this.nextElementSibling.textContent=this.value; onTSChange()"><span class="val">1</span></label>
+          </div>
+        </div>
+        <div class="control-group">
+          <label><input type="checkbox" id="ts-normalize" onchange="onTSChange()"> Normalize Δf/n</label>
+        </div>
+      </div>
+
+      <div class="main-content" id="ts-main">
+        <div id="ts-chart" style="width:100%; height:440px;"></div>
+        <div class="marker-toolbar" id="marker-toolbar">
+          <button id="btn-add-marker" class="primary small" onclick="enterPlacement()">+ Add marker</button>
+          <button class="small danger" onclick="clearMarkers()">Clear all</button>
+          <span class="hint" id="placement-hint" style="display:none;">Click on the chart to place the marker — Esc to cancel</span>
+        </div>
+        <div id="step-table-area"></div>
+        <div id="custom-delta-area"></div>
+
+        <details class="editor-section">
+          <summary>🎨 Visual editor</summary>
+          <div class="editor-grid">
+            <div><label>Title</label><input type="text" id="ts-ed-title" placeholder="Chart title"></div>
+            <div><label>Line width</label><input type="range" id="ts-ed-lw" min="0.5" max="5" step="0.5" value="1.5" oninput="applyTSEditor()"></div>
+            <div><label>Y left label</label><input type="text" id="ts-ed-yl" value="Frequency shift [Hz]"></div>
+            <div><label>Y right label</label><input type="text" id="ts-ed-yr" value="Dissipation shift [ppm]"></div>
+            <div><label>Y left limits</label><input type="text" id="ts-ed-ylim" placeholder="min,max"></div>
+            <div><label>Y right limits</label><input type="text" id="ts-ed-y2lim" placeholder="min,max"></div>
+            <div><label>Font size</label><input type="range" id="ts-ed-fs" min="8" max="22" value="13" oninput="applyTSEditor()"></div>
+            <div><label>Legend</label>
+              <select id="ts-ed-leg" onchange="applyTSEditor()">
+                <option value="auto">Auto</option><option value="outside">Outside right</option><option value="hidden">Hidden</option>
+              </select>
+            </div>
+            <div class="editor-actions">
+              <button class="small primary" onclick="applyTSEditor()">Apply</button>
+              <button class="small" onclick="copyEditorSettings('ts','ddf')">Copy to ΔD vs Δf →</button>
+            </div>
+          </div>
+        </details>
+
+        <div class="export-section">
+          <strong>Export:</strong>
+          <select id="ts-exp-fmt"><option value="png">PNG</option><option value="svg">SVG</option></select>
+          <button class="small" onclick="exportChart('ts-chart',getId('ts-exp-fmt').value)">💾 Figure</button>
+          <button class="small" onclick="exportTableCSV()">📋 Table CSV</button>
+          <button class="small" onclick="exportTablePNG()">📋 Table PNG</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ──── ΔD vs Δf TAB ──── -->
+  <div id="tab-ddf" class="tab-content">
+    <div class="view-layout">
+      <div class="controls-sidebar">
+        <div class="control-group">
+          <label>Harmonic</label>
+          <select id="ddf-harmonic" onchange="onDDFChange()"></select>
+        </div>
+        <div class="control-group">
+          <label>Time window</label>
+          <div class="time-row">
+            <input type="text" id="ddf-tmin" placeholder="hh:mm" onchange="onDDFChange()">
+            <span>—</span>
+            <input type="text" id="ddf-tmax" placeholder="hh:mm" onchange="onDDFChange()">
+          </div>
+        </div>
+        <div class="control-group">
+          <label><input type="checkbox" id="ddf-smooth-chk" onchange="onDDFChange()"> Smoothing</label>
+          <div class="smooth-params">
+            <label>Window <input type="range" id="ddf-smooth-win" min="3" max="101" step="2" value="21" oninput="this.nextElementSibling.textContent=this.value; onDDFChange()"><span class="val">21</span></label>
+            <label>Order <input type="range" id="ddf-smooth-poly" min="1" max="5" value="1" oninput="this.nextElementSibling.textContent=this.value; onDDFChange()"><span class="val">1</span></label>
+          </div>
+        </div>
+      </div>
+      <div class="main-content">
+        <div id="ddf-chart" style="width:100%; height:480px;"></div>
+        <details class="editor-section">
+          <summary>🎨 Visual editor</summary>
+          <div class="editor-grid">
+            <div><label>Title</label><input type="text" id="ddf-ed-title" placeholder="Chart title"></div>
+            <div><label>Line width</label><input type="range" id="ddf-ed-lw" min="0.5" max="5" step="0.5" value="1.5" oninput="applyDDFEditor()"></div>
+            <div><label>X label</label><input type="text" id="ddf-ed-xl" value="Δf [Hz]"></div>
+            <div><label>Y label</label><input type="text" id="ddf-ed-yl" value="ΔD [ppm]"></div>
+            <div><label>X limits</label><input type="text" id="ddf-ed-xlim" placeholder="min,max"></div>
+            <div><label>Y limits</label><input type="text" id="ddf-ed-ylim" placeholder="min,max"></div>
+            <div><label>Font size</label><input type="range" id="ddf-ed-fs" min="8" max="22" value="13" oninput="applyDDFEditor()"></div>
+            <div><label>Legend</label>
+              <select id="ddf-ed-leg" onchange="applyDDFEditor()">
+                <option value="auto">Auto</option><option value="outside">Outside right</option><option value="hidden">Hidden</option>
+              </select>
+            </div>
+            <div class="editor-actions">
+              <button class="small primary" onclick="applyDDFEditor()">Apply</button>
+              <button class="small" onclick="copyEditorSettings('ddf','ts')">Copy to Time Series →</button>
+            </div>
+          </div>
+        </details>
+        <div class="export-section">
+          <strong>Export:</strong>
+          <select id="ddf-exp-fmt"><option value="png">PNG</option><option value="svg">SVG</option></select>
+          <button class="small" onclick="exportChart('ddf-chart',getId('ddf-exp-fmt').value)">💾 Figure</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/qcm.js"></script>
+</body>
+</html>
